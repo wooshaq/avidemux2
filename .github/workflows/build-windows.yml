@@ -124,7 +124,7 @@ jobs:
       - name: Host packages
         run: |
           .github/scripts/mxe-host-deps.sh
-          sudo apt-get install -y python3-pefile
+          sudo apt-get install -y python3-pefile nsis
       - uses: actions/cache/restore@v4
         with:
           path: /opt/mxe
@@ -143,8 +143,19 @@ jobs:
           VER=$(git -C "$GITHUB_WORKSPACE" rev-parse --short HEAD)
           echo "PKG=Avidemux_WsQ_win64_$(date +%Y%m%d)_$VER" >> "$GITHUB_ENV"
           mv avidemux64 "Avidemux_WsQ_win64_$(date +%Y%m%d)_$VER"
+      - name: Installer (NSIS)
+        run: |
+          cd "$GITHUB_WORKSPACE/avidemux/winInstaller"
+          VER="$(date +%Y.%m.%d)-$(git -C "$GITHUB_WORKSPACE" rev-parse --short HEAD)"
+          makensis -V2 -DSRCDIR="$RUNNER_TEMP/build/$PKG" -DOUTFILE="$RUNNER_TEMP/build/Avidemux_WsQ_setup_$VER.exe" -DVERSION="$VER" avidemux_wsq.nsi
+          echo "SETUP=Avidemux_WsQ_setup_$VER" >> "$GITHUB_ENV"
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ env.PKG }}
           path: ${{ runner.temp }}/build/${{ env.PKG }}
+          retention-days: 30
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.SETUP }}
+          path: ${{ runner.temp }}/build/${{ env.SETUP }}.exe
           retention-days: 30
