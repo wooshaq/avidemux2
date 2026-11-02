@@ -26,10 +26,13 @@
  ***************************************************************************/
 #pragma once
 #include <QItemDelegate>
+#include <vector>
 #include "ui_mainfilter.h"
 #include "ui_quickfilter.h"
 #include "ADM_inttype.h"
 #include "Q_seekablePreview.h"
+#include <QLineEdit>
+class CONFcouple;
 /**
  * \class FilterItemEventFilter
  * @return 
@@ -110,6 +113,21 @@ public slots:
     void rowsMovedSlot(void);
 protected:
     int  getTagForActiveSelection();
+public:
+    /* WsQ layout */
+    struct WsqSnap
+    {
+        uint32_t tag;
+        CONFcouple *conf;
+        bool enabled;
+    };
+    std::vector<WsqSnap> wsqSnapshot;
+    QLineEdit *wsqSearchEdit = nullptr;
+    int wsqFamily = 0;
+    void wsqRestyle(void);
+    void wsqSearch(const QString &text);
+    void wsqCancel(void);
+    void wsqToggleRow(int row);
 private:
     void setSelected(int sel);
     void displayFamily(uint32_t family);

@@ -24,6 +24,9 @@
 
 class QSettings;
 class QToolBar;
+class QHBoxLayout;
+class QLabel;
+class QToolButton;
 
 #define ENABLE_EVENT_FILTER
 
@@ -145,11 +148,16 @@ public:
     void wsqSetup(void);
     bool wsqKeepWindowSize(void);
     void wsqSetKeepWindowSize(bool keep);
-    uint32_t wsqRailWidth(void);
+    uint32_t wsqExtraWidth(void);
     void wsqRestoreGeometry(QSettings *qset);
     void wsqSaveGeometry(QSettings *qset);
     void wsqFileStateChanged(bool loaded);
     void wsqLeaveTheme(void);
+    void wsqSetCurrentPts(uint64_t pts);
+    void wsqSetTotalPts(uint64_t pts);
+    void wsqSetMarkers(uint64_t a, uint64_t b);
+    void wsqUpdateInfo(void);
+    void wsqVuUpdate(const int32_t *volume);
 
     static void updateCheckDone(int version, const std::string &date, const std::string &downloadLink);
     static MainWindow *mainWindowSingleton;
@@ -175,6 +183,30 @@ protected:
     QToolBar *wsqRail = nullptr;
     QPushButton *wsqSaveButton = nullptr;
     WsqHelper *wsqHelper = nullptr;
+    QWidget *wsqVuColumn = nullptr;
+    WsqVuBars *wsqVu = nullptr;
+    QLabel *wsqFrameLabel = nullptr;
+    QLabel *wsqSelLabel = nullptr;
+    QLabel *wsqInfoLabel = nullptr;
+    QLabel *wsqDecoderLabel = nullptr;
+    QLabel *wsqFilterBadge = nullptr;
+    QLabel *wsqRailBadge = nullptr;
+    QToolButton *wsqZoomButton = nullptr;
+    QToolButton *wsqMoreButton = nullptr;
+    QLabel *wsqDurTitle = nullptr;
+    QWidget *wsqG1 = nullptr, *wsqG2 = nullptr, *wsqG3a = nullptr, *wsqG3b = nullptr, *wsqG4 = nullptr;
+    QHBoxLayout *wsqRow1 = nullptr, *wsqRow2 = nullptr;
+    QWidget *wsqRow2Host = nullptr;
+    int wsqMode = -1; // 0 compact, 1 wide
+    uint64_t wsqCurPts = 0, wsqTotalPts = 0, wsqMarkA = 0, wsqMarkB = 0;
+    int wsqLastFilterCount = -1;
+    void wsqArrangeNav(bool force = false);
+    void wsqBuildPanel(void);
+    void wsqBuildNav(void);
+    void wsqBuildToolbar(void);
+    void wsqBuildCentral(void);
+    void wsqUpdateFrameLabels(void);
+    void wsqPollFilters(void);
     QString defaultStyle;
 #ifdef BROKEN_PALETTE_PROPAGATION
     std::vector<QMenu *> subMenus;

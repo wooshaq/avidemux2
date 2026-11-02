@@ -15,11 +15,13 @@ Custom slider
 #include <stdlib.h>
 #include "ADM_inttype.h"
 #include <QPainter>
+#include <QPainterPath>
 #include <QSlider>
 #include <QWheelEvent>
 #include "ADM_mwNavSlider.h"
 #include "ADM_assert.h"
 #include "ADM_default.h"
+bool ADM_mwNavSlider::wsqStyle = false;
 /**
     \fn ADM_QSlider
 */
@@ -73,6 +75,11 @@ void ADM_mwNavSlider::drawCutPoints(void)
 */
 void ADM_mwNavSlider::paintEvent(QPaintEvent *event)
 {
+    if (wsqStyle)
+    {
+        wsqPaint();
+        return;
+    }
     drawCutPoints();
 
     QSlider::paintEvent(event);
@@ -143,3 +150,86 @@ void ADM_mwNavSlider::wheelEvent(QWheelEvent *e)
 #endif
 }
 //EOF
+
+/**
+    \fn wsqPaint
+    \brief WsQ timeline: dark rounded bar, time grid ticks, cut points, A-B range, playhead
+*/
+void ADM_mwNavSlider::wsqPaint(void)
+{
+    QPainter p(this);
+    p.setRenderHint(QPainter::Antialiasing, true);
+    const QRectF r = QRectF(rect()).adjusted(0.5, 0.5, -0.5, -0.5);
+    const qreal W = width();
+    const qreal H = height();
+    const bool ltr = layoutDirection() == Qt::LeftToRight;
+    auto X = [&](qreal frac) -> qreal { return ltr ? frac * W : W - frac * W; };
+
+    QPainterPath clip;
+    clip.addRoundedRect(r, 6, 6);
+    p.fillPath(clip, QColor(0x16, 0x19, 0x1e));
+    p.setClipPath(clip);
+
+    // A-B range (only when the selection is not the whole video)
+    if (totalDuration && markerBTime > markerATime && (markerATime > 0 || markerBTime < totalDuration))
+    {
+        qreal a = X((qreal)markerATime / totalDuration);
+        qreal b = X((qreal)markerBTime / totalDuration);
+        if (a > b)
+            qSwap(a, b);
+        QColor acc(0x4a, 0x9b, 0xff);
+        QColor fill = acc;
+        fill.setAlpha(46);
+        p.fillRect(QRectF(a, 0, b - a, H), fill);
+        p.fillRect(QRectF(a, 0, 2, H), acc);
+        p.fillRect(QRectF(b - 2, 0, 2, H), acc);
+        QFont f = font();
+        f.setPixelSize(11);
+        f.setBold(true);
+        p.setFont(f);
+        p.setPen(acc);
+        p.drawText(QRectF(a + 5, 2, 20, 14), Qt::AlignLeft | Qt::AlignTop, "A");
+        p.drawText(QRectF(b - 25, 2, 20, 14), Qt::AlignRight | Qt::AlignTop, "B");
+    }
+
+    // time grid ticks
+    p.setPen(QPen(QColor(0x4a, 0x52, 0x5e), 1));
+    for (int i = 1; i < 12; i++)
+    {
+        qreal x = qRound(W * i / 12.0) + 0.5;
+        p.drawLine(QPointF(x, H - 9), QPointF(x, H - 2));
+    }
+
+    // cut points between segments
+    if (segments && numOfSegments > 1 && totalDuration)
+    {
+        p.setPen(QPen(QColor(0xff, 0x9f, 0x43), 1));
+        for (uint32_t i = 1; i < numOfSegments; i++)
+        {
+            if (segments[i] == ADM_NO_PTS)
+                continue;
+            qreal x = qRound(X((qreal)segments[i] / totalDuration)) + 0.5;
+            p.drawLine(QPointF(x, 3), QPointF(x, H - 3));
+        }
+    }
+
+    // playhead
+    if (maximum() > minimum())
+    {
+        qreal frac = (qreal)(value() - minimum()) / (qreal)(maximum() - minimum());
+        qreal x = X(frac);
+        if (x < 1)
+            x = 1;
+        if (x > W - 2)
+            x = W - 2;
+        QColor ph = isEnabled() ? Qt::white : QColor(0x5d, 0x65, 0x73);
+        p.fillRect(QRectF(x - 1, 0, 2, H), ph);
+        p.setBrush(ph);
+        p.setPen(Qt::NoPen);
+        p.drawRoundedRect(QRectF(x - 6, -3, 12, 9), 3, 3);
+    }
+    p.setClipping(false);
+    p.setPen(QPen(QColor(0x2a, 0x2f, 0x37), 1));
+    p.setBrush(Qt::NoBrush);
+    p.drawRoundedRect(r, 6, 6);
+}

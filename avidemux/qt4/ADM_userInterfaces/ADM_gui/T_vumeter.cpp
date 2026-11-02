@@ -91,8 +91,11 @@ bool UI_InitVUMeter(QFrame *host)
     \fn UI_vuUpdate
     \brief Update vumeter, input is volume per channel as integer dBFS (valid range -100 to +3), mark inactive channel with +255 (> 3)
 */
+void (*wsqVuHook)(const int32_t *volume) = NULL; // WsQ: VU column in the main window
 bool UI_vuUpdate(int32_t volume[8])
 {
+    if (wsqVuHook)
+        wsqVuHook(volume);
     int width = vuWidget->width();
     uint8_t * basePtr = vuWidget->rgbDataBuffer;
     

@@ -29,7 +29,10 @@ protected:
     void paintEvent(QPaintEvent *event);
     void wheelEvent(QWheelEvent *e);
 
+    void wsqPaint(void);
+
 public:
+    static bool wsqStyle; // WsQ: flat timeline with A-B range and playhead
     ADM_mwNavSlider(QWidget *parent);
     virtual ~ADM_mwNavSlider();
 

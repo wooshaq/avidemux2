@@ -1,50 +1,49 @@
 /***************************************************************************
-    Avidemux WsQ UI additions (theme, wrapping navigation bar, panel rail)
+    Avidemux WsQ UI additions (theme, card panel, timeline, navigation bar,
+    VU column, icon rail, remembered window geometry)
  ***************************************************************************/
 #ifndef Q_gui2_wsq_h
 #define Q_gui2_wsq_h
 
+#include <functional>
+#include <QAction>
+#include <QDockWidget>
 #include <QLayout>
 #include <QList>
 #include <QObject>
 #include <QPair>
 #include <QRect>
-#include <QAction>
-#include <QDockWidget>
+#include <QVector>
+#include <QWidget>
 
 #define ADM_QT_THEME_WSQ 3
 
+/* Accent colour used by custom painted widgets */
+#define WSQ_ACCENT QColor(0x4a, 0x9b, 0xff)
+
 /**
-    \class WsqFlowLayout
-    \brief left-to-right layout that wraps items to further rows when narrow
+    \class WsqVuBars
+    \brief thin vertical level bars (one per active audio channel)
 */
-class WsqFlowLayout : public QLayout
+class WsqVuBars : public QWidget
 {
   public:
-    explicit WsqFlowLayout(QWidget *parent, int hSpacing, int vSpacing);
-    ~WsqFlowLayout();
+    explicit WsqVuBars(QWidget *parent) : QWidget(parent)
+    {
+    }
+    void setVolumes(const int32_t *volume);
 
-    void addItem(QLayoutItem *item) override;
-    Qt::Orientations expandingDirections() const override;
-    bool hasHeightForWidth() const override;
-    int heightForWidth(int) const override;
-    int count() const override;
-    QLayoutItem *itemAt(int index) const override;
-    QSize minimumSize() const override;
-    void setGeometry(const QRect &rect) override;
-    QSize sizeHint() const override;
-    QLayoutItem *takeAt(int index) override;
+  protected:
+    void paintEvent(QPaintEvent *ev) override;
 
   private:
-    int doLayout(const QRect &rect, bool testOnly) const;
-    QList<QLayoutItem *> itemList;
-    int hSpace;
-    int vSpace;
+    QVector<float> levels;
+    QVector<float> peaks;
 };
 
 /**
     \class WsqHelper
-    \brief event filter keeping the navigation dock height and rail actions in sync
+    \brief event filter: navigation bar re-layout, enabled-state mirroring, misc.
 */
 class WsqHelper : public QObject
 {
@@ -53,11 +52,15 @@ class WsqHelper : public QObject
     {
     }
     bool eventFilter(QObject *watched, QEvent *event) override;
-    void updateNavHeight(void);
 
-    QDockWidget *navDock = nullptr;
     QWidget *navContents = nullptr;
+    QWidget *timeField = nullptr;
+    QWidget *volumeButton = nullptr;
+    std::function<void(void)> onNavResize;
+    std::function<void(void)> onTimeDoubleClick;
+    std::function<void(int)> onVolumeWheel;
     QList<QPair<QObject *, QAction *>> mirrors;
+    QList<QPair<QObject *, QWidget *>> widgetMirrors;
 
   private:
     bool pending = false;

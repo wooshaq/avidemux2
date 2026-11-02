@@ -57,6 +57,7 @@ extern "C" Display *XOpenDisplay(const char *display_name);
 // clang-format on
 
 void UI_QT4VideoWidget(QFrame *host);
+bool wsqFlexibleVideoFrame = false; // WsQ: see Q_gui2_wsq.cpp
 extern QApplication *currentQApplication();
 extern QWidget *QuiMainWindows;
 static uint32_t displayW = 0, displayH = 0;
@@ -215,7 +216,15 @@ void ADM_Qvideo::setADMSize(int width, int height)
             height = 1;
     }
 #endif
-    hostFrame->setFixedSize(width, height);
+    if (wsqFlexibleVideoFrame)
+    {
+        // WsQ: the host frame may shrink below the video size while the window is being
+        // made smaller; the zoom follows on the resize event.
+        hostFrame->setMinimumSize(0, 0);
+        hostFrame->setMaximumSize(width, height);
+    }
+    else
+        hostFrame->setFixedSize(width, height);
     setFixedSize(width, height);
 }
 

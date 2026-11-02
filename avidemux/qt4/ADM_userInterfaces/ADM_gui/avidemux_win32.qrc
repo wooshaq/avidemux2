@@ -129,5 +129,19 @@
         <file>pics/wsq_video@2x.png</file>
         <file>pics/wsq_save_dark.png</file>
         <file>pics/wsq_save_dark@2x.png</file>
+        <file>pics/wsq_append.png</file>
+        <file>pics/wsq_append@2x.png</file>
+        <file>pics/wsq_more.png</file>
+        <file>pics/wsq_more@2x.png</file>
+        <file>pics/wsq_play_dark.png</file>
+        <file>pics/wsq_play_dark@2x.png</file>
+        <file>pics/wsq_plus_dark.png</file>
+        <file>pics/wsq_plus_dark@2x.png</file>
+        <file>pics/wsq_queue.png</file>
+        <file>pics/wsq_queue@2x.png</file>
+        <file>pics/wsq_search.png</file>
+        <file>pics/wsq_search@2x.png</file>
+        <file>pics/wsq_stop_dark.png</file>
+        <file>pics/wsq_stop_dark@2x.png</file>
     </qresource>
 </RCC>

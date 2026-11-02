@@ -601,6 +601,13 @@ void filtermainWindow::filterFamilyClick(int m)
 void filtermainWindow::displayFamily(uint32_t family)
 {
     ADM_assert(family < VF_MAX);
+    wsqFamily = family;
+    if (wsqSearchEdit && !wsqSearchEdit->text().isEmpty())
+    {
+        wsqSearchEdit->blockSignals(true);
+        wsqSearchEdit->clear();
+        wsqSearchEdit->blockSignals(false);
+    }
 
     uint32_t nb = ADM_vf_getNbFiltersInCategory((VF_CATEGORY)family);
     ADM_info("Video filter Family :%u, nb %d\n", family, nb);
@@ -932,6 +939,7 @@ filtermainWindow::filtermainWindow(QWidget *parent) : QDialog(parent)
 #else
     ui.labelAcceptHint->setVisible(false);
 #endif
+    wsqRestyle();
 }
 
 /**
@@ -939,6 +947,9 @@ filtermainWindow::filtermainWindow(QWidget *parent) : QDialog(parent)
 */
 filtermainWindow::~filtermainWindow()
 {
+    for (auto &sn : wsqSnapshot)
+        delete sn.conf;
+    wsqSnapshot.clear();
     if (previewDialog)
         delete previewDialog;
     previewDialog = NULL;
@@ -1438,4 +1449,363 @@ int GUI_handleVPartialFilter(void)
     dialog.exec();
     qtUnregisterDialog(&dialog);
     return 0;
+}
+
+/* ======================================================================
+ *  WsQ layout of the video filter manager: categories | filters | chain
+ * ====================================================================== */
+#include <QHBoxLayout>
+#include <QMouseEvent>
+#include <QPainterPath>
+#include <QVBoxLayout>
+
+#define WSQ_PL(x) QString::fromUtf8(x)
+
+/**
+    \class WsqFilterDelegate
+    \brief card-like rows; active rows get drag handle, number and on/off switch
+*/
+class WsqFilterDelegate : public QItemDelegate
+{
+  public:
+    WsqFilterDelegate(QWidget *parent, bool active) : QItemDelegate(parent), active(active)
+    {
+    }
+    static QRect switchRect(const QRect &card)
+    {
+        return QRect(card.right() - 12 - 30, card.center().y() - 8, 30, 16);
+    }
+    static QRect cardRect(const QRect &r)
+    {
+        return r.adjusted(0, 3, -2, -3);
+    }
+    QSize sizeHint(const QStyleOptionViewItem &option, const QModelIndex &index) const override
+    {
+        QFont f = QApplication::font();
+        QFontMetrics fm(f);
+        return QSize(option.rect.width(), fm.height() * 2 + 30);
+    }
+    void paint(QPainter *p, const QStyleOptionViewItem &option, const QModelIndex &index) const override
+    {
+        if (!index.isValid())
+            return;
+        p->save();
+        p->setRenderHint(QPainter::Antialiasing, true);
+        bool sel = option.state & QStyle::State_Selected;
+        bool disabled = index.data(FilterItemDelegate::DisabledRole).toBool();
+        QRect card = cardRect(option.rect);
+        QPainterPath path;
+        path.addRoundedRect(QRectF(card).adjusted(0.5, 0.5, -0.5, -0.5), 8, 8);
+        p->fillPath(path, sel ? QColor(0x1e, 0x35, 0x57) : QColor(0x25, 0x2a, 0x32));
+        p->setPen(QPen(sel ? QColor(0x2b, 0x4f, 0x80) : QColor(0x2f, 0x35, 0x3f), 1));
+        p->drawPath(path);
+
+        int x = card.left() + 12;
+        QFont nameFont = QApplication::font();
+        nameFont.setBold(true);
+        QFont descFont = QApplication::font();
+        if (descFont.pointSizeF() > 0)
+            descFont.setPointSizeF(descFont.pointSizeF() - 1);
+        QFontMetrics nfm(nameFont), dfm(descFont);
+
+        if (active)
+        {
+            // drag handle
+            p->setPen(QColor(0x5d, 0x65, 0x73));
+            p->setFont(QApplication::font());
+            p->drawText(QRect(x, card.top(), 12, card.height()), Qt::AlignVCenter | Qt::AlignLeft,
+                        WSQ_PL("⋮⋮"));
+            x += 20;
+            // number
+            QRect circ(x, card.center().y() - 10, 20, 20);
+            p->setPen(Qt::NoPen);
+            p->setBrush(QColor(0x2c, 0x32, 0x3b));
+            p->drawEllipse(circ);
+            QFont nf = QApplication::font();
+            nf.setPixelSize(11);
+            p->setFont(nf);
+            p->setPen(QColor(0xd6, 0xdb, 0xe3));
+            p->drawText(circ, Qt::AlignCenter, QString::number(index.row() + 1));
+            x += 30;
+            // switch
+            QRect sw = switchRect(card);
+            p->setPen(Qt::NoPen);
+            p->setBrush(disabled ? QColor(0x3a, 0x41, 0x4c) : QColor(0x4a, 0x9b, 0xff));
+            p->drawRoundedRect(sw, 8, 8);
+            p->setBrush(Qt::white);
+            int kx = disabled ? sw.left() + 2 : sw.right() - 13;
+            p->drawEllipse(QRect(kx, sw.top() + 2, 12, 12));
+        }
+        int right = active ? switchRect(card).left() - 10 : card.right() - 12;
+        int w = right - x;
+        QString name = index.data(FilterItemDelegate::FilterNameRole).toString();
+        QString desc = index.data(FilterItemDelegate::DescriptionRole).toString().simplified();
+        int top = card.top() + (card.height() - nfm.height() - dfm.height() - 2) / 2;
+        p->setFont(nameFont);
+        QColor nameColor = sel ? Qt::white : QColor(0xd6, 0xdb, 0xe3);
+        if (disabled)
+            nameColor = QColor(0x8b, 0x94, 0xa3);
+        p->setPen(nameColor);
+        p->drawText(QRect(x, top, w, nfm.height()), Qt::AlignLeft | Qt::AlignVCenter,
+                    nfm.elidedText(name, Qt::ElideRight, w));
+        p->setFont(descFont);
+        p->setPen(sel ? QColor(0xb6, 0xc8, 0xe2) : QColor(0x8b, 0x94, 0xa3));
+        p->drawText(QRect(x, top + nfm.height() + 2, w, dfm.height()), Qt::AlignLeft | Qt::AlignVCenter,
+                    dfm.elidedText(desc, Qt::ElideRight, w));
+        p->restore();
+    }
+
+  private:
+    bool active;
+};
+
+/**
+    \class WsqFilterClick
+    \brief click on the on/off switch of an active filter
+*/
+class WsqFilterClick : public QObject
+{
+  public:
+    WsqFilterClick(filtermainWindow *w) : QObject(w), win(w)
+    {
+    }
+    bool eventFilter(QObject *watched, QEvent *event) override
+    {
+        if (event->type() == QEvent::MouseButtonPress)
+        {
+            QMouseEvent *me = static_cast<QMouseEvent *>(event);
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+            QPoint pos = me->position().toPoint();
+#else
+            QPoint pos = me->pos();
+#endif
+            QModelIndex idx = win->activeList->indexAt(pos);
+            if (idx.isValid())
+            {
+                QRect card = WsqFilterDelegate::cardRect(win->activeList->visualRect(idx));
+                if (WsqFilterDelegate::switchRect(card).adjusted(-4, -6, 4, 6).contains(pos))
+                {
+                    win->wsqToggleRow(idx.row());
+                    return true;
+                }
+            }
+        }
+        return QObject::eventFilter(watched, event);
+    }
+
+  private:
+    filtermainWindow *win;
+};
+
+static void wsqTakeAllItems(QLayout *l)
+{
+    if (!l)
+        return;
+    QLayoutItem *item;
+    while ((item = l->takeAt(0)))
+    {
+        if (item->layout())
+        {
+            wsqTakeAllItems(item->layout());
+            delete item->layout();
+            continue;
+        }
+        delete item;
+    }
+}
+
+/**
+    \fn wsqToggleRow
+*/
+void filtermainWindow::wsqToggleRow(int row)
+{
+    activeList->setCurrentRow(row);
+    toggleEnabled();
+}
+
+/**
+    \fn wsqSearch
+    \brief search all categories by name and description
+*/
+void filtermainWindow::wsqSearch(const QString &text)
+{
+    QString t = text.trimmed();
+    if (t.isEmpty())
+    {
+        displayFamily(wsqFamily);
+        return;
+    }
+    availableList->clear();
+    for (uint32_t family = 0; family < VF_MAX; family++)
+    {
+        uint32_t nb = ADM_vf_getNbFiltersInCategory((VF_CATEGORY)family);
+        for (uint32_t i = 0; i < nb; i++)
+        {
+            const char *name, *desc;
+            uint32_t major, minor, patch;
+            ADM_vf_getFilterInfo((VF_CATEGORY)family, i, &name, &desc, &major, &minor, &patch);
+            QString s1 = QString::fromUtf8(name);
+            QString s2 = QString::fromUtf8(desc);
+            if (!s1.contains(t, Qt::CaseInsensitive) && !s2.contains(t, Qt::CaseInsensitive))
+                continue;
+            QListWidgetItem *item = new QListWidgetItem(NULL, availableList, ALL_FILTER_BASE + i + family * 100);
+            item->setData(FilterItemDelegate::FilterNameRole, s1);
+            item->setData(FilterItemDelegate::DescriptionRole, s2);
+            availableList->addItem(item);
+        }
+    }
+    if (availableList->count())
+        availableList->setCurrentRow(0);
+}
+
+/**
+    \fn wsqCancel
+    \brief restore the filter chain as it was when the dialog was opened
+*/
+void filtermainWindow::wsqCancel(void)
+{
+    ADM_vf_clearFilters();
+    for (auto &sn : wsqSnapshot)
+    {
+        ADM_VideoFilterElement *e = ADM_vf_addFilterFromTag(video_body, sn.tag, sn.conf, false);
+        if (e)
+            e->enabled = sn.enabled;
+    }
+    ADM_vf_recreateChain();
+    reject();
+}
+
+/**
+    \fn wsqRestyle
+    \brief three columns (categories | available filters | active chain) + footer
+*/
+void filtermainWindow::wsqRestyle(void)
+{
+    // snapshot of the chain for "Cancel"
+    for (uint32_t i = 0; i < nb_active_filter; i++)
+    {
+        WsqSnap sn;
+        sn.tag = ADM_vf_getTag(i);
+        sn.enabled = ADM_vf_getEnabled(i);
+        sn.conf = NULL;
+        ADM_vf_getInstance(i)->getCoupledConf(&sn.conf);
+        wsqSnapshot.push_back(sn);
+    }
+
+    QLayout *root = layout();
+    wsqTakeAllItems(root);
+    QVBoxLayout *v = static_cast<QVBoxLayout *>(root);
+    v->setContentsMargins(0, 0, 0, 0);
+    v->setSpacing(0);
+
+    QHBoxLayout *body = new QHBoxLayout();
+    body->setContentsMargins(0, 0, 0, 0);
+    body->setSpacing(0);
+
+    // column 1: categories
+    QWidget *c1 = new QWidget(this);
+    c1->setObjectName("wsqFilterCategories");
+    c1->setAttribute(Qt::WA_StyledBackground, true);
+    c1->setFixedWidth(200);
+    QVBoxLayout *l1 = new QVBoxLayout(c1);
+    l1->setContentsMargins(8, 12, 8, 12);
+    l1->setSpacing(6);
+    QLabel *t1 = new QLabel(WSQ_PL("KATEGORIE"), c1);
+    t1->setObjectName("wsqCardTitle");
+    t1->setContentsMargins(10, 0, 0, 2);
+    l1->addWidget(t1);
+    ui.listFilterCategory->setParent(c1);
+    ui.listFilterCategory->setIconSize(QSize(0, 0));
+    ui.listFilterCategory->setMaximumWidth(QWIDGETSIZE_MAX);
+    for (int i = 0; i < ui.listFilterCategory->count(); i++)
+        ui.listFilterCategory->item(i)->setIcon(QIcon());
+    l1->addWidget(ui.listFilterCategory, 1);
+    ui.listFilterCategory->blockSignals(true);
+    ui.listFilterCategory->setCurrentRow(0);
+    ui.listFilterCategory->blockSignals(false);
+    body->addWidget(c1);
+
+    // column 2: search + available filters + add
+    QWidget *c2 = new QWidget(this);
+    c2->setObjectName("wsqFilterMiddle");
+    c2->setAttribute(Qt::WA_StyledBackground, true);
+    QVBoxLayout *l2 = new QVBoxLayout(c2);
+    l2->setContentsMargins(12, 12, 12, 12);
+    l2->setSpacing(10);
+    wsqSearchEdit = new QLineEdit(c2);
+    wsqSearchEdit->setPlaceholderText(WSQ_PL("Szukaj filtra…"));
+    wsqSearchEdit->setClearButtonEnabled(true);
+    wsqSearchEdit->addAction(QIcon(":/new/prefix1/pics/wsq_search.png"), QLineEdit::LeadingPosition);
+    wsqSearchEdit->setMinimumHeight(32);
+    connect(wsqSearchEdit, &QLineEdit::textChanged, this, [this](const QString &t) { wsqSearch(t); });
+    l2->addWidget(wsqSearchEdit);
+    availableList->setParent(c2);
+    availableList->setItemDelegate(new WsqFilterDelegate(availableList, false));
+    availableList->setSpacing(0);
+    l2->addWidget(availableList, 1);
+    QPushButton *addBtn = new QPushButton(QIcon(":/new/prefix1/pics/wsq_plus_dark.png"),
+                                          WSQ_PL("Dodaj do łańcucha"), c2);
+    addBtn->setObjectName("wsqAccentButton");
+    addBtn->setMinimumHeight(36);
+    connect(addBtn, &QPushButton::clicked, this, [this]() { add(false); });
+    l2->addWidget(addBtn);
+    body->addWidget(c2, 1);
+
+    // column 3: active chain + actions
+    QWidget *c3 = new QWidget(this);
+    QVBoxLayout *l3 = new QVBoxLayout(c3);
+    l3->setContentsMargins(12, 12, 12, 12);
+    l3->setSpacing(10);
+    QLabel *t3 = new QLabel(WSQ_PL("AKTYWNE FILTRY · KOLEJNOŚĆ"), c3);
+    t3->setObjectName("wsqCardTitle");
+    l3->addWidget(t3);
+    activeList->setParent(c3);
+    activeList->setItemDelegate(new WsqFilterDelegate(activeList, true));
+    activeList->viewport()->installEventFilter(new WsqFilterClick(this));
+    l3->addWidget(activeList, 1);
+    QHBoxLayout *acts = new QHBoxLayout();
+    acts->setSpacing(8);
+    ui.pushButtonPreview->setParent(c3);
+    ui.pushButtonPreview->setIcon(QIcon());
+    ui.pushButtonPreview->setText(WSQ_PL("Podgląd"));
+    QPushButton *conf = new QPushButton(WSQ_PL("Konfiguruj"), c3);
+    connect(conf, &QPushButton::clicked, this, [this]() { configure(false); });
+    QPushButton *rem = new QPushButton(WSQ_PL("Usuń"), c3);
+    rem->setObjectName("wsqDangerButton");
+    connect(rem, &QPushButton::clicked, this, [this]() { remove(false); });
+    acts->addWidget(ui.pushButtonPreview, 1);
+    acts->addWidget(conf, 1);
+    acts->addWidget(rem, 1);
+    l3->addLayout(acts);
+    body->addWidget(c3, 1);
+
+    v->addLayout(body, 1);
+
+    // footer
+    QWidget *foot = new QWidget(this);
+    foot->setObjectName("wsqDialogFooter");
+    foot->setAttribute(Qt::WA_StyledBackground, true);
+    foot->setFixedHeight(56);
+    QHBoxLayout *fl = new QHBoxLayout(foot);
+    fl->setContentsMargins(16, 0, 16, 0);
+    fl->setSpacing(10);
+    ui.labelAcceptHint->setParent(foot);
+    ui.labelAcceptHint->hide();
+    fl->addStretch(1);
+    QPushButton *cancel = new QPushButton(WSQ_PL("Anuluj"), foot);
+    cancel->setMinimumHeight(34);
+    cancel->setMinimumWidth(90);
+    connect(cancel, &QPushButton::clicked, this, [this]() { wsqCancel(); });
+    fl->addWidget(cancel);
+    ui.buttonClose->setParent(foot);
+    ui.buttonClose->setText(WSQ_PL("OK"));
+    ui.buttonClose->setIcon(QIcon());
+    ui.buttonClose->setObjectName("wsqAccentButton");
+    ui.buttonClose->setMinimumHeight(34);
+    ui.buttonClose->setMinimumWidth(90);
+    ui.buttonClose->setDefault(true);
+    fl->addWidget(ui.buttonClose);
+    v->addWidget(foot);
+
+    resize(980, 640);
 }

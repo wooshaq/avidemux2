@@ -945,6 +945,8 @@ static toolBarTranslate toolbar[] = {{"actionOpen", ACT_OPEN_VIDEO},
                                      {"actionSave_project", ACT_SAVE_PY_SCRIPT},
                                      {"actionPlayFiltered", ACT_PreviewChanged},
                                      {"actionHDRSettings", ACT_SetHDRConfig},
+                                     {"wsqActionAppend", ACT_APPEND_VIDEO},
+                                     {"wsqActionQueue", ACT_SAVE_QUEUE},
 
                                      {NULL, ACT_DUMMY}};
 void MainWindow::searchToolBar(QAction *action)
@@ -1438,7 +1440,7 @@ void MainWindow::setMenuItemsEnabledState(void)
         for (int i = 0; i < ntb; i++)
             ButtonsDisabledOnPlayback[i]->setEnabled(false);
 
-        ui.toolButtonPlay->setIcon(QIcon(MKICON(player_stop)));
+        ui.toolButtonPlay->setIcon(QIcon(MKICON(wsq_stop_dark)));
         ui.menuGo->actions().at(0)->setIcon(QIcon(MKICON(player_stop)));
 
         int npb = PushButtonsDisabledOnPlayback.size();
@@ -1512,7 +1514,7 @@ void MainWindow::setMenuItemsEnabledState(void)
     for (int i = 0; i < n; i++)
         ActionsAlwaysAvailable[i]->setEnabled(true);
 
-    ui.toolButtonPlay->setIcon(QIcon(MKICON(player_play)));
+    ui.toolButtonPlay->setIcon(QIcon(MKICON(wsq_play_dark)));
     ui.menuGo->actions().at(0)->setIcon(QIcon(MKICON(player_play)));
 
     ui.toolButtonDeleteSelection->setEnabled(canDelete);
@@ -2608,7 +2610,7 @@ void MainWindow::calcDockWidgetDimensions(uint32_t &width, uint32_t &height)
         reqw += ui.codecWidget->frameSize().width() + 6; // with codec widget visible a small extra margin is necessary
     if (ui.toolBar->orientation() == Qt::Vertical && ui.toolBar->isVisible() && false == ui.toolBar->isFloating())
         reqw += ui.toolBar->frameSize().width();
-    reqw += wsqRailWidth();
+    reqw += wsqExtraWidth();
     width = reqw;
 
     uint32_t reqh = 18; // 2 x 9px margin
@@ -2733,10 +2735,15 @@ void MainWindow::addStatusBar(void)
     statusBarWidget = new QStatusBar(this);
     statusBarWidget->setSizeGripEnabled(false);
 
-    statusBarInfo = new QLabel("");
-    statusBarWidget->addWidget(statusBarInfo);
+    // WsQ layout: "Klatka N / T", "Wybrano K klatek", messages ... decoder info on the right
+    wsqFrameLabel = new QLabel("");
+    statusBarWidget->addWidget(wsqFrameLabel);
+    wsqSelLabel = new QLabel("");
+    statusBarWidget->addWidget(wsqSelLabel);
     statusBarMessage = new QLabel("");
-    statusBarWidget->addWidget(statusBarMessage);
+    statusBarWidget->addWidget(statusBarMessage, 1);
+    statusBarInfo = new QLabel("");
+    statusBarWidget->addPermanentWidget(statusBarInfo);
 
     statusBarWidget->setContentsMargins(4, 0, 4, 0);
 
@@ -2754,6 +2761,8 @@ void MainWindow::removeStatusBar(void)
         return;
 
     this->setStatusBar(NULL); // Qt should take care of deleting nested objects
+    wsqFrameLabel = NULL;
+    wsqSelLabel = NULL;
 
     statusBarTimer.stop();
     statusBarWidget = NULL;
@@ -2766,18 +2775,22 @@ void MainWindow::removeStatusBar(void)
 */
 void MainWindow::updateStatusBarInfo(void)
 {
+    wsqUpdateInfo();
     if (!statusBarWidget)
         return;
     QString s = QString("");
     if (avifileinfo)
     {
-        s += QString(QT_TRANSLATE_NOOP("qgui2", "Input: %1x%2, %3fps  |  Decoder: %4  |  Display: %5  |  Zoom: %6%"))
-                 .arg(avifileinfo->width)
-                 .arg(avifileinfo->height)
-                 .arg(avifileinfo->fps1000 / 1000.0)
-                 .arg(statusBarInfo_Decoder)
-                 .arg(statusBarInfo_Display)
-                 .arg(statusBarInfo_Zoom);
+        // WsQ: resolution/fps/zoom live in the toolbar, frame numbers on the left
+        const char *hw[] = {"DXVA2", "VDPAU", "LIBVA", "VideoToolbox", "D3D11VA", "NVDEC", NULL};
+        bool isHw = false;
+        for (int i = 0; hw[i]; i++)
+            if (!statusBarInfo_Decoder.compare(QString(hw[i]), Qt::CaseInsensitive))
+                isHw = true;
+        if (isHw)
+            s += QString::fromUtf8("Dekodowanie sprzętowe: %1").arg(statusBarInfo_Decoder);
+        else
+            s += QString::fromUtf8("Dekodowanie programowe: %1").arg(statusBarInfo_Decoder);
     }
     else
     {
@@ -2788,6 +2801,7 @@ void MainWindow::updateStatusBarInfo(void)
         statusBarInfo->setText(s);
     if (statusBarMessage)
         statusBarMessage->clear();
+    wsqUpdateFrameLabels();
     statusBarTimer.stop();
 }
 
@@ -3463,9 +3477,9 @@ void UI_setFrameType(uint32_t frametype, uint32_t qp)
         break;
     }
     if (qp == ADM_IMAGE_UNKNOWN_QP)
-        sprintf(string, QT_TRANSLATE_NOOP("qgui2", "%c-%s"), c, f);
+        sprintf(string, "%c-%s", c, f);
     else
-        sprintf(string, QT_TRANSLATE_NOOP("qgui2", "%c-%s (%02d)"), c, f, qp);
+        sprintf(string, "%c-%s \xC2\xB7 QP %d", c, f, qp); // WsQ: "I-FRM · QP 22"
     WIDGET(label_8)->setText(string);
 }
 /**
@@ -3490,6 +3504,7 @@ void UI_setCurrentTime(uint64_t curTime)
     ms2time(shorty, &hh, &mm, &ss, &ms);
     sprintf(text, "%02d:%02d:%02d.%03d", hh, mm, ss, ms);
     WIDGET(currentTime)->setText(text);
+    ((MainWindow *)QuiMainWindows)->wsqSetCurrentPts(curTime);
 }
 
 /**
@@ -3506,6 +3521,7 @@ void UI_setTotalTime(uint64_t curTime)
     sprintf(text, "/ %02d:%02d:%02d.%03d", hh, mm, ss, ms);
     WIDGET(totalTime)->setText(text);
     slider->setTotalDuration(curTime);
+    ((MainWindow *)QuiMainWindows)->wsqSetTotalPts(curTime);
 }
 /**
     \fn UI_setSegments
@@ -3541,10 +3557,10 @@ void UI_setMarkers(uint64_t a, uint64_t b)
     timems = (uint32_t)(b - a);
     ms2time(timems, &hh, &mm, &ss, &ms);
     snprintf(text, 79, "%02" PRIu32 ":%02" PRIu32 ":%02" PRIu32 ".%03" PRIu32, hh, mm, ss, ms);
-    QString duration = QString::fromUtf8(QT_TRANSLATE_NOOP("qgui2", "Selection: ")) + QString(text);
-    WIDGET(selectionDuration)->setText(duration);
+    WIDGET(selectionDuration)->setText(QString(text)); // WsQ: the "Długość" caption is a separate label
 
     slider->setMarkers(absoluteA, absoluteB);
+    ((MainWindow *)QuiMainWindows)->wsqSetMarkers(absoluteA, absoluteB);
 }
 
 /**
