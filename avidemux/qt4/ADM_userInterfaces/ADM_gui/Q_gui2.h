@@ -20,6 +20,10 @@
 #include "IScriptEngine.h"
 #include "prefs.h"
 #include "avi_vars.h"
+#include "Q_gui2_wsq.h"
+
+class QSettings;
+class QToolBar;
 
 #define ENABLE_EVENT_FILTER
 
@@ -135,6 +139,17 @@ public:
 
     void setLightTheme(void);
     void setDarkTheme(void);
+    void setWsqTheme(void);
+
+    /* WsQ additions */
+    void wsqSetup(void);
+    bool wsqKeepWindowSize(void);
+    void wsqSetKeepWindowSize(bool keep);
+    uint32_t wsqRailWidth(void);
+    void wsqRestoreGeometry(QSettings *qset);
+    void wsqSaveGeometry(QSettings *qset);
+    void wsqFileStateChanged(bool loaded);
+    void wsqLeaveTheme(void);
 
     static void updateCheckDone(int version, const std::string &date, const std::string &downloadLink);
     static MainWindow *mainWindowSingleton;
@@ -155,6 +170,11 @@ protected:
     QAction *defaultThemeAction;
     QAction *lightThemeAction;
     QAction *darkThemeAction;
+    QAction *wsqThemeAction = nullptr;
+    QAction *wsqKeepSizeAction = nullptr;
+    QToolBar *wsqRail = nullptr;
+    QPushButton *wsqSaveButton = nullptr;
+    WsqHelper *wsqHelper = nullptr;
     QString defaultStyle;
 #ifdef BROKEN_PALETTE_PROPAGATION
     std::vector<QMenu *> subMenus;
@@ -275,6 +295,9 @@ private slots:
     void setDefaultThemeSlot(bool b);
     void setLightThemeSlot(bool b);
     void setDarkThemeSlot(bool b);
+    void setWsqThemeSlot(bool b);
+    void wsqTogglePanel(void);
+    void wsqPanelVisibilityChanged(bool visible);
 
     void statusBarTimerTimeout(void);
     

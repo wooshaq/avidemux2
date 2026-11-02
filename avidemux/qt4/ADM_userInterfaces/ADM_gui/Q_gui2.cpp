@@ -141,6 +141,7 @@ extern void ADM_ExitCleanup(void);
 
 static bool uiRunning = false;
 static bool uiIsMaximized = false;
+static bool wsqAutoZoomPending = false; // WsQ: next UI_resize comes from automatic zoom on file load
 
 static bool needsResizing = false;
 
@@ -913,6 +914,8 @@ MainWindow::MainWindow(const vector<IScriptEngine *> &scriptEngines) : _scriptEn
 
     widgetsUpdateTooltips();
 
+    wsqSetup();
+
     this->adjustSize();
     ui.currentTime->setTextMargins(0, 0, 0, 0); // some Qt themes mess with text margins
 
@@ -1526,6 +1529,7 @@ void MainWindow::setMenuItemsEnabledState(void)
     slider->setEnabled(vid);
 
     updateCodecWidgetControlsState();
+    wsqFileStateChanged(vid);
     // actions performed by the code above may result in a window resize event,
     // which in turn may initiate unwanted zoom changes e.g. when stopping playback
     // or loading a video with small dimensions, so ignore just this one resize event
@@ -1937,6 +1941,7 @@ void MainWindow::setDefaultThemeSlot(bool b)
         return;
     }
     QPalette pal; // empty palette to restore native style colors
+    wsqLeaveTheme();
     qApp->setStyle(style);
     qApp->setPalette(pal);
     ui.currentTime->setTextMargins(0, 0, 0, 0);
@@ -2007,6 +2012,7 @@ void MainWindow::setDefaultThemeSlot(bool b)
 */
 void MainWindow::setLightTheme(void)
 {
+    wsqLeaveTheme();
     mySetStyle();
     QPalette lightPalette;
     lightPalette.setColor(QPalette::Window, QColor(239, 239, 239));
@@ -2069,6 +2075,7 @@ void MainWindow::setLightThemeSlot(bool b)
 */
 void MainWindow::setDarkTheme(void)
 {
+    wsqLeaveTheme();
     mySetStyle();
     QPalette darkPalette;
     darkPalette.setColor(QPalette::Window, QColor(32, 32, 32));
@@ -2601,6 +2608,7 @@ void MainWindow::calcDockWidgetDimensions(uint32_t &width, uint32_t &height)
         reqw += ui.codecWidget->frameSize().width() + 6; // with codec widget visible a small extra margin is necessary
     if (ui.toolBar->orientation() == Qt::Vertical && ui.toolBar->isVisible() && false == ui.toolBar->isFloating())
         reqw += ui.toolBar->frameSize().width();
+    reqw += wsqRailWidth();
     width = reqw;
 
     uint32_t reqh = 18; // 2 x 9px margin
@@ -2968,13 +2976,17 @@ uint8_t initGUI(const vector<IScriptEngine *> &scriptEngines)
         qset->beginGroup("MainWindow");
         mw->restoreState(qset->value("windowState").toByteArray());
         uiIsMaximized = qset->value("showMaximized", false).toBool();
-        switch (qset->value("theme", ADM_QT_THEME_DEFAULT).toInt())
+        mw->wsqRestoreGeometry(qset);
+        switch (qset->value("theme", ADM_QT_THEME_WSQ).toInt())
         {
         case ADM_QT_THEME_LIGHT:
             mw->setLightTheme();
             break;
         case ADM_QT_THEME_DARK:
             mw->setDarkTheme();
+            break;
+        case ADM_QT_THEME_WSQ:
+            mw->setWsqTheme();
             break;
         default:
             break;
@@ -3080,6 +3092,7 @@ void UI_closeGui(void)
         qset->beginGroup("MainWindow");
         qset->setValue("windowState", ((QMainWindow *)QuiMainWindows)->saveState());
         qset->setValue("showMaximized", QuiMainWindows->isMaximized());
+        ((MainWindow *)QuiMainWindows)->wsqSaveGeometry(qset);
         qset->setValue("volume", WIDGET(horizontalSlider_2)->value());
         qset->setValue("statusbarHidden", !(((MainWindow *)QuiMainWindows)->statusBarEnabled()));
         qset->endGroup();
@@ -3735,6 +3748,16 @@ void UI_resize(uint32_t w, uint32_t h)
 {
     if (((MainWindow *)QuiMainWindows)->getBlockResizingFlag())
         return;
+    // WsQ: closing a video (0x0) must not shrink the window either.
+    if ((!w || !h) && ((MainWindow *)QuiMainWindows)->wsqKeepWindowSize() && QuiMainWindows->isVisible())
+        return;
+    // WsQ: when a file is opened (automatic zoom), keep the window as the user left it.
+    if (wsqAutoZoomPending)
+    {
+        wsqAutoZoomPending = false;
+        if (((MainWindow *)QuiMainWindows)->wsqKeepWindowSize() && QuiMainWindows->isVisible())
+            return;
+    }
     uint32_t reqw, reqh;
     ((MainWindow *)QuiMainWindows)->calcDockWidgetDimensions(reqw, reqh);
     reqw += w;
@@ -3803,6 +3826,22 @@ void UI_resize(uint32_t w, uint32_t h)
 */
 void UI_getMaximumPreviewSize(uint32_t *availWidth, uint32_t *availHeight)
 {
+    // WsQ: fit the video into the current window instead of resizing the window.
+    wsqAutoZoomPending = true;
+    if (((MainWindow *)QuiMainWindows)->wsqKeepWindowSize() && QuiMainWindows->isVisible() &&
+        !QuiMainWindows->isMinimized())
+    {
+        uint32_t dw, dh;
+        ((MainWindow *)QuiMainWindows)->calcDockWidgetDimensions(dw, dh);
+        int aw = QuiMainWindows->width() - (int)dw;
+        int ah = QuiMainWindows->height() - (int)dh;
+        if (aw > 16 && ah > 16)
+        {
+            *availWidth = aw;
+            *availHeight = ah;
+            return;
+        }
+    }
     QSize frme = QuiMainWindows->frameSize();
     int fwidth = frme.width() - QuiMainWindows->width();
     int fheight = frme.height() - QuiMainWindows->height();
@@ -3841,6 +3880,8 @@ void UI_getMaximumPreviewSize(uint32_t *availWidth, uint32_t *availHeight)
 */
 bool UI_getNeedsResizingFlag(void)
 {
+    if (((MainWindow *)QuiMainWindows)->wsqKeepWindowSize())
+        return false;
     return needsResizing;
 }
 

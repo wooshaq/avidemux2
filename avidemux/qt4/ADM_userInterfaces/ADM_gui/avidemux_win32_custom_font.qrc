@@ -106,5 +106,29 @@
         <file>pics/script9@2x.png</file>
         <file>fonts/ADM7SEG.ttf</file>
         <file>sounds/notify.wav</file>
+        <file>pics/wsq_afilter.png</file>
+        <file>pics/wsq_afilter@2x.png</file>
+        <file>pics/wsq_arrow_down.png</file>
+        <file>pics/wsq_arrow_down@2x.png</file>
+        <file>pics/wsq_arrow_up.png</file>
+        <file>pics/wsq_arrow_up@2x.png</file>
+        <file>pics/wsq_audio.png</file>
+        <file>pics/wsq_audio@2x.png</file>
+        <file>pics/wsq_check.png</file>
+        <file>pics/wsq_check@2x.png</file>
+        <file>pics/wsq_collapse.png</file>
+        <file>pics/wsq_collapse@2x.png</file>
+        <file>pics/wsq_expand.png</file>
+        <file>pics/wsq_expand@2x.png</file>
+        <file>pics/wsq_format.png</file>
+        <file>pics/wsq_format@2x.png</file>
+        <file>pics/wsq_save.png</file>
+        <file>pics/wsq_save@2x.png</file>
+        <file>pics/wsq_vfilter.png</file>
+        <file>pics/wsq_vfilter@2x.png</file>
+        <file>pics/wsq_video.png</file>
+        <file>pics/wsq_video@2x.png</file>
+        <file>pics/wsq_save_dark.png</file>
+        <file>pics/wsq_save_dark@2x.png</file>
     </qresource>
 </RCC>

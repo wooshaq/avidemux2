@@ -2,6 +2,7 @@ SET(ADM_LIB ADM_gui${QT_LIBRARY_EXTENSION})
 ADD_LIBRARY(${ADM_LIB} STATIC
   Q_gui2.cpp Q_gui2GL.cpp
   Q_gui2_menu.cpp
+  Q_gui2_wsq.cpp
   T_preview.cpp
   T_vumeter.cpp
   T_thumbSlider.cpp
