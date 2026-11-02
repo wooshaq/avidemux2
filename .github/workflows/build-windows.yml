@@ -113,6 +113,8 @@ jobs:
     needs: [check, mxe-stage1, mxe-stage2]
     if: always() && !failure() && !cancelled()
     runs-on: ubuntu-24.04
+    permissions:
+      contents: write
     timeout-minutes: 300
     steps:
       - uses: actions/checkout@v4
@@ -159,3 +161,17 @@ jobs:
           name: ${{ env.SETUP }}
           path: ${{ runner.temp }}/build/${{ env.SETUP }}.exe
           retention-days: 30
+      - name: GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd "$RUNNER_TEMP/build"
+          (cd "$PKG" && zip -qr9 "../$PKG.zip" .)
+          SHORT=$(git -C "$GITHUB_WORKSPACE" rev-parse --short HEAD)
+          TAG="wsq-$(date +%Y%m%d)-$SHORT"
+          MSG=$(git -C "$GITHUB_WORKSPACE" log -1 --format=%s)
+          printf 'Avidemux WsQ – build z commita %s\n\n%s\n\n- **%s.exe** – instalator (instaluje się obok oficjalnego Avidemuxa)\n- **%s.zip** – wersja do rozpakowania (zmień nazwę avidemux.exe na avidemux_portable.exe, żeby ustawienia były w folderze programu)\n' \
+            "$SHORT" "$MSG" "$SETUP" "$PKG" > notes.md
+          gh release create "$TAG" "$SETUP.exe" "$PKG.zip" \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "Avidemux WsQ $(date +%Y-%m-%d) ($SHORT)" --notes-file notes.md --latest
