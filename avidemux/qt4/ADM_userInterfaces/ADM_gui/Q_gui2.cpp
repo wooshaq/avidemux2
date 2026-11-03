@@ -141,7 +141,7 @@ extern void ADM_ExitCleanup(void);
 
 static bool uiRunning = false;
 static bool uiIsMaximized = false;
-static bool wsqAutoZoomPending = false; // WsQ: next UI_resize comes from automatic zoom on file load
+static bool wsqExplicitZoom = false; // WsQ: the next UI_resize comes from a zoom chosen by the user (25/50/100/200%)
 
 static bool needsResizing = false;
 
@@ -582,6 +582,8 @@ void MainWindow::actionSlot(Action a)
 */
 void MainWindow::sendAction(Action a)
 {
+    if (a >= ACT_ZOOM_1_4 && a <= ACT_ZOOM_2_1)
+        wsqExplicitZoom = true;
     if (((a >= ACT_Back1Second) && (a <= ACT_Forward1Mn) || (a == ACT_GotoMarkA) || (a == ACT_GotoMarkB)) &&
         (playing || (navigateWhilePlayingState != 0)))
         navigateWhilePlaying(a);
@@ -3228,6 +3230,7 @@ int UI_RunApp(void)
     ADM_info("Load default settings if any... \n");
     A_loadDefaultSettings();
     UI_applySettings();
+    ((MainWindow *)QuiMainWindows)->wsqReapplyGeometry();
 
     // start update checking..
     bool autoUpdateEnabled = false;
@@ -3764,14 +3767,14 @@ void UI_resize(uint32_t w, uint32_t h)
 {
     if (((MainWindow *)QuiMainWindows)->getBlockResizingFlag())
         return;
-    // WsQ: closing a video (0x0) must not shrink the window either.
-    if ((!w || !h) && ((MainWindow *)QuiMainWindows)->wsqKeepWindowSize() && QuiMainWindows->isVisible())
-        return;
-    // WsQ: when a file is opened (automatic zoom), keep the window as the user left it.
-    if (wsqAutoZoomPending)
+    // WsQ: with "keep window size" the program never changes the window size by itself
+    // (file load, playback start/stop, renderer re-init, closing a file). Only a zoom level
+    // picked explicitly by the user may resize the window to fit the video.
+    if (((MainWindow *)QuiMainWindows)->wsqKeepWindowSize() && QuiMainWindows->isVisible())
     {
-        wsqAutoZoomPending = false;
-        if (((MainWindow *)QuiMainWindows)->wsqKeepWindowSize() && QuiMainWindows->isVisible())
+        bool allowed = wsqExplicitZoom && w && h;
+        wsqExplicitZoom = false;
+        if (!allowed)
             return;
     }
     uint32_t reqw, reqh;
@@ -3843,7 +3846,6 @@ void UI_resize(uint32_t w, uint32_t h)
 void UI_getMaximumPreviewSize(uint32_t *availWidth, uint32_t *availHeight)
 {
     // WsQ: fit the video into the current window instead of resizing the window.
-    wsqAutoZoomPending = true;
     if (((MainWindow *)QuiMainWindows)->wsqKeepWindowSize() && QuiMainWindows->isVisible() &&
         !QuiMainWindows->isMinimized())
     {

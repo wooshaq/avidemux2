@@ -151,6 +151,7 @@ public:
     uint32_t wsqExtraWidth(void);
     void wsqRestoreGeometry(QSettings *qset);
     void wsqSaveGeometry(QSettings *qset);
+    void wsqReapplyGeometry(void);
     void wsqFileStateChanged(bool loaded);
     void wsqLeaveTheme(void);
     void wsqSetCurrentPts(uint64_t pts);
@@ -200,6 +201,7 @@ protected:
     int wsqMode = -1; // 0 compact, 1 wide
     uint64_t wsqCurPts = 0, wsqTotalPts = 0, wsqMarkA = 0, wsqMarkB = 0;
     int wsqLastFilterCount = -1;
+    QByteArray wsqSavedGeometry;
     void wsqArrangeNav(bool force = false);
     void wsqBuildPanel(void);
     void wsqBuildNav(void);

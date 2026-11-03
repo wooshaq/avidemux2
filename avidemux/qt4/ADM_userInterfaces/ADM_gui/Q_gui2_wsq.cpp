@@ -26,6 +26,7 @@
 #include <QPalette>
 #include <QPushButton>
 #include <QResizeEvent>
+#include <QScrollArea>
 #include <QScreen>
 #include <QStatusBar>
 #include <QStyle>
@@ -175,6 +176,7 @@ QWidget#centralwidget { background: #121418; }
 QWidget#dockWidgetContents, QWidget#dockWidgetContents_2, QWidget#dockWidgetContents_3,
 QWidget#dockWidgetContents_5, QWidget#dockWidgetContents_7 { background: #1f232a; }
 QWidget#dockWidgetContents_2 { border-top: 1px solid #262b33; }
+QScrollArea#wsqPanelScroll, QScrollArea#wsqPanelScroll > QWidget > QWidget { background: #1f232a; }
 QWidget#wsqVuColumn { background: #1f232a; border-left: 1px solid #262b33; }
 
 QMenuBar { background: #1b1e24; color: #aeb6c3; padding: 2px 6px; }
@@ -535,8 +537,19 @@ void MainWindow::wsqBuildPanel(void)
     wsqSaveButton = save;
 
     host->setMinimumWidth(252);
+    // the panel scrolls instead of dictating the window's minimum height
+    QScrollArea *scroll = new QScrollArea(ui.codecWidget);
+    scroll->setObjectName("wsqPanelScroll");
+    scroll->setFrameShape(QFrame::NoFrame);
+    scroll->setWidgetResizable(true);
+    scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    scroll->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    scroll->setMinimumHeight(0);
+    ui.codecWidget->setWidget(scroll); // takes the contents widget out of the dock first
+    scroll->setWidget(host);
     ui.codecWidget->setMinimumWidth(280);
     ui.codecWidget->setMaximumWidth(280);
+    ui.centralwidget->setMinimumSize(120, 80);
 }
 
 /**
@@ -1302,6 +1315,22 @@ void MainWindow::wsqLeaveTheme(void)
 }
 
 /**
+    \fn wsqApplySavedGeometry
+    \brief restore the saved normal geometry (Qt's own format, handles the window frame and DPI)
+*/
+static bool wsqApplySavedGeometry(QMainWindow *w, const QByteArray &g)
+{
+    if (g.isEmpty())
+        return false;
+    if (!w->restoreGeometry(g))
+        return false;
+    // Avidemux maximizes the window itself (see UI_RunApp), keep only the normal geometry here
+    if (w->windowState() & Qt::WindowMaximized)
+        w->setWindowState(w->windowState() & ~Qt::WindowMaximized);
+    return true;
+}
+
+/**
     \fn wsqRestoreGeometry
     \brief restore the last normal window geometry, or pick a sensible default
 */
@@ -1312,9 +1341,14 @@ void MainWindow::wsqRestoreGeometry(QSettings *qset)
     ui.audioMetreWidget->hide();
     ui.volumeWidget->hide();
     wsqPanelVisibilityChanged(true); // dock state was just restored
-    QRect r = qset ? qset->value("wsqGeometry", QRect()).toRect() : QRect();
     wsqSetKeepWindowSize(qset ? qset->value("wsqKeepWindowSize", true).toBool() : true);
 
+    wsqSavedGeometry = qset ? qset->value("wsqGeometryBytes", QByteArray()).toByteArray() : QByteArray();
+    if (wsqApplySavedGeometry(this, wsqSavedGeometry))
+        return;
+
+    // older WsQ builds stored a plain rectangle
+    QRect r = qset ? qset->value("wsqGeometry", QRect()).toRect() : QRect();
     QScreen *screen = nullptr;
     if (r.isValid())
         screen = QGuiApplication::screenAt(r.center());
@@ -1325,6 +1359,7 @@ void MainWindow::wsqRestoreGeometry(QSettings *qset)
         r.setHeight(qMin(r.height(), avail.height()));
         resize(r.size());
         move(r.topLeft());
+        wsqSavedGeometry = saveGeometry();
         return;
     }
     screen = QGuiApplication::primaryScreen();
@@ -1337,14 +1372,31 @@ void MainWindow::wsqRestoreGeometry(QSettings *qset)
 }
 
 /**
+    \fn wsqReapplyGeometry
+    \brief start-up code (DXVA probing, settings, first layout) may still resize the window
+           after it was restored; put the saved size back once everything has settled
+*/
+void MainWindow::wsqReapplyGeometry(void)
+{
+    if (wsqSavedGeometry.isEmpty())
+        return;
+    auto apply = [this]() {
+        if (isMaximized() || isFullScreen() || isMinimized())
+            return;
+        wsqApplySavedGeometry(this, wsqSavedGeometry);
+    };
+    QTimer::singleShot(0, this, apply);
+    QTimer::singleShot(400, this, apply);
+}
+
+/**
     \fn wsqSaveGeometry
 */
 void MainWindow::wsqSaveGeometry(QSettings *qset)
 {
     if (!qset)
         return;
-    QRect r = (isMaximized() || isFullScreen()) ? normalGeometry() : geometry();
-    if (r.isValid())
-        qset->setValue("wsqGeometry", r);
+    qset->setValue("wsqGeometryBytes", saveGeometry());
+    qset->remove("wsqGeometry");
     qset->setValue("wsqKeepWindowSize", wsqKeepWindowSize());
 }
